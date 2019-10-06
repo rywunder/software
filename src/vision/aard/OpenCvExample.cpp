@@ -31,19 +31,20 @@ either expressed or implied, of the Regents of The University of Michigan.
 
 extern "C" {
 #include "apriltag.h"
-#include "common/getopt.h"
-#include "tag16h5.h"
-#include "tag25h9.h"
 #include "tag36h11.h"
+#include "tag25h9.h"
+#include "tag16h5.h"
 #include "tagCircle21h7.h"
 #include "tagCircle49h12.h"
 #include "tagCustom48h12.h"
 #include "tagStandard41h12.h"
 #include "tagStandard52h13.h"
+#include "common/getopt.h"
 }
 
 using namespace std;
 using namespace cv;
+
 
 int main(int argc, char *argv[])
 {
@@ -54,13 +55,12 @@ int main(int argc, char *argv[])
     getopt_add_bool(getopt, 'q', "quiet", 0, "Reduce output");
     getopt_add_string(getopt, 'f', "family", "tag36h11", "Tag family to use");
     getopt_add_int(getopt, 't', "threads", "1", "Use this many CPU threads");
-    getopt_add_double(getopt, 'x', "decimate", "1.0", "Decimate input image by this factor");
+    getopt_add_double(getopt, 'x', "decimate", "2.0", "Decimate input image by this factor");
     getopt_add_double(getopt, 'b', "blur", "0.0", "Apply low-pass blur to input");
-    getopt_add_bool(
-        getopt, '0', "refine-edges", 1, "Spend more time trying to align edges of tags");
+    getopt_add_bool(getopt, '0', "refine-edges", 1, "Spend more time trying to align edges of tags");
 
-    if (!getopt_parse(getopt, argc, argv, 1) || getopt_get_bool(getopt, "help"))
-    {
+    if (!getopt_parse(getopt, argc, argv, 1) ||
+            getopt_get_bool(getopt, "help")) {
         printf("Usage: %s [options]\n", argv[0]);
         getopt_do_usage(getopt);
         exit(0);
@@ -68,8 +68,7 @@ int main(int argc, char *argv[])
 
     // Initialize camera
     VideoCapture cap(0);
-    if (!cap.isOpened())
-    {
+    if (!cap.isOpened()) {
         cerr << "Couldn't open video capture device" << endl;
         return -1;
     }
@@ -98,6 +97,7 @@ int main(int argc, char *argv[])
         exit(-1);
     }
 
+
     apriltag_detector_t *td = apriltag_detector_create();
     apriltag_detector_add_family(td, tf);
     td->quad_decimate = getopt_get_double(getopt, "decimate");
@@ -107,74 +107,76 @@ int main(int argc, char *argv[])
     td->refine_edges = getopt_get_bool(getopt, "refine-edges");
 
     Mat frame, gray;
+    while (true) {
+        cap >> frame;
+        cvtColor(frame, gray, COLOR_BGR2GRAY);
 
-    frame = imread("/home/amansr/software/src/vision/aard/twoPics1.jpg", CV_LOAD_IMAGE_UNCHANGED);
-    cvtColor(frame, gray, COLOR_BGR2GRAY);
+        // Make an image_u8_t header for the Mat data
+        image_u8_t im = { .width = gray.cols,
+            .height = gray.rows,
+            .stride = gray.cols,
+            .buf = gray.data
+        };
 
-    // Make an image_u8_t header for the Mat data
-    image_u8_t im{gray.cols, gray.rows, gray.cols, gray.data};
+        zarray_t *detections = apriltag_detector_detect(td, &im);
+        cout << zarray_size(detections) << " tags detected" << endl;
 
-    zarray_t *detections = apriltag_detector_detect(td, &im);
-    cout << zarray_size(detections) << " tags detected" << endl;
+        // Draw detection outlines
+        for (int i = 0; i < zarray_size(detections); i++) {
+            apriltag_detection_t *det;
+            zarray_get(detections, i, &det);
+            line(frame, Point(det->p[0][0], det->p[0][1]),
+                     Point(det->p[1][0], det->p[1][1]),
+                     Scalar(0, 0xff, 0), 2);
+            line(frame, Point(det->p[0][0], det->p[0][1]),
+                     Point(det->p[3][0], det->p[3][1]),
+                     Scalar(0, 0, 0xff), 2);
+            line(frame, Point(det->p[1][0], det->p[1][1]),
+                     Point(det->p[2][0], det->p[2][1]),
+                     Scalar(0xff, 0, 0), 2);
+            line(frame, Point(det->p[2][0], det->p[2][1]),
+                     Point(det->p[3][0], det->p[3][1]),
+                     Scalar(0xff, 0, 0), 2);
 
-    // Draw detection outlines
-    for (int i = 0; i < zarray_size(detections); i++)
-    {
-        apriltag_detection_t *det;
-        zarray_get(detections, i, &det);
-        line(frame, Point(det->p[0][0], det->p[0][1]), Point(det->p[1][0], det->p[1][1]),
-            Scalar(0, 0xff, 0), 2);
-        line(frame, Point(det->p[0][0], det->p[0][1]), Point(det->p[3][0], det->p[3][1]),
-            Scalar(0, 0, 0xff), 2);
-        line(frame, Point(det->p[1][0], det->p[1][1]), Point(det->p[2][0], det->p[2][1]),
-            Scalar(0xff, 0, 0), 2);
-        line(frame, Point(det->p[2][0], det->p[2][1]), Point(det->p[3][0], det->p[3][1]),
-            Scalar(0xff, 0, 0), 2);
-
-        stringstream ss;
-        ss << det->id;
-        String text = ss.str();
-        int fontface = FONT_HERSHEY_SCRIPT_SIMPLEX;
-        double fontscale = 1.0;
-        int baseline;
-        Size textsize = getTextSize(text, fontface, fontscale, 2, &baseline);
-        putText(frame, text,
-            Point(det->c[0] - textsize.width / 2, det->c[1] + textsize.height / 2), fontface,
-            fontscale, Scalar(0xff, 0x99, 0), 2);
-    }
+            stringstream ss;
+            ss << det->id;
+            String text = ss.str();
+            int fontface = FONT_HERSHEY_SCRIPT_SIMPLEX;
+            double fontscale = 1.0;
+            int baseline;
+            Size textsize = getTextSize(text, fontface, fontscale, 2,
+                                            &baseline);
+            putText(frame, text, Point(det->c[0]-textsize.width/2,
+                                       det->c[1]+textsize.height/2),
+                    fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
+        }
         zarray_destroy(detections);
-    
+
+        imshow("Tag Detections", frame);
+        if (waitKey(30) >= 0)
+            break;
+    }
 
     apriltag_detector_destroy(td);
 
-    if (!strcmp(famname, "tag36h11"))
-    {
+    if (!strcmp(famname, "tag36h11")) {
         tag36h11_destroy(tf);
-    }
-    else if (!strcmp(famname, "tag25h9"))
-    {
+    } else if (!strcmp(famname, "tag25h9")) {
         tag25h9_destroy(tf);
-    }
-    else if (!strcmp(famname, "tag16h5"))
-    {
+    } else if (!strcmp(famname, "tag16h5")) {
         tag16h5_destroy(tf);
-    }
-    else if (!strcmp(famname, "tagCircle21h7"))
-    {
+    } else if (!strcmp(famname, "tagCircle21h7")) {
         tagCircle21h7_destroy(tf);
-    }
-    else if (!strcmp(famname, "tagCircle49h12"))
-    {
+    } else if (!strcmp(famname, "tagCircle49h12")) {
         tagCircle49h12_destroy(tf);
-    }
-    else if (!strcmp(famname, "tagStandard41h12"))
-    {
+    } else if (!strcmp(famname, "tagStandard41h12")) {
         tagStandard41h12_destroy(tf);
-    }
-    else if (!strcmp(famname, "tagStandard52h13"))
-    {
+    } else if (!strcmp(famname, "tagStandard52h13")) {
         tagStandard52h13_destroy(tf);
+    } else if (!strcmp(famname, "tagCustom48h12")) {
+        tagCustom48h12_destroy(tf);
     }
+
 
     getopt_destroy(getopt);
 

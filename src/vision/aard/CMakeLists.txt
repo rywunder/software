@@ -1,14 +1,35 @@
 # find required packages
 find_package(OpenCV REQUIRED)
 find_package(Apriltags REQUIRED)
+find_package(Eigen3)
 
-add_executable(opencv_demo opencv_demo.cc)
+include_directories(
+    ${OPENCV_INCLUDE_DIR}
+    ${EIGEN3_INCLUDE_DIR}
+)
 
-target_link_libraries(opencv_demo
+include_directories(SYSTEM
+    ${APRILTAGS_INCLUDE_DIRS}
+)
+
+add_library(AprilTagWrapper SHARED AprilTagWrapper.cpp)
+
+add_executable(AprilTagTest AprilTagWrapperMain.cpp)
+
+target_link_libraries(AprilTagWrapper
+    ${OpenCV_LIBS}
+    ${APRILTAGS_LIBRARIES}
+
+)
+add_executable(AprilTagExample opencv_demo.cc)
+
+target_link_libraries(AprilTagExample
     ${OpenCV_LIBS}
     ${APRILTAGS_LIBRARIES}
 )
 
-target_include_directories(opencv_demo PUBLIC  ${OPENCV_INCLUDE_DIR})
-
-target_include_directories(opencv_demo SYSTEM PUBLIC ${APRILTAGS_INCLUDE_DIRS})
+target_link_libraries(AprilTagTest
+    ${OpenCV_LIBS}
+    ${APRILTAGS_LIBRARIES}
+    AprilTagWrapper
+)
